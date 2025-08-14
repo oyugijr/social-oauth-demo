@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Social OAuth Demo</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <h1>Social OAuth Demo</h1>
+
+  <section>
+    <h2>Connect Accounts</h2>
+    <div class="grid">
+      <div>
+        <h3>Facebook</h3>
+        <p>Status: <strong><%= fb ? 'Connected' : 'Not connected' %></strong></p>
+        <a class="btn" href="/auth/facebook">Connect with Facebook</a>
+        <% if (fb) { %>
+          <p>User token obtained at: <%= fb.obtained_at %></p>
+          <form method="get" action="/result">
+            <button formaction="/result" class="btn secondary">View last result</button>
+          </form>
+          <hr/>
+          <h4>Page Actions</h4>
+          <p>1) Get Page access token</p>
+          <form onsubmit="return false;">
+            <input id="fb-page-id" placeholder="PAGE_ID" />
+            <button class="btn" onclick="location.href='/facebook/page-token/' + document.getElementById('fb-page-id').value">Fetch Page Token</button>
+          </form>
+          <p>2) Post a test message</p>
+          <form method="post" action="/facebook/page-post/" onsubmit="event.preventDefault(); postToPage();">
+            <input id="fb-post-page-id" placeholder="PAGE_ID" />
+            <input id="fb-post-message" placeholder="Message" value="Test post from OAuth demo." />
+            <button class="btn">Post</button>
+          </form>
+          <script>
+            async function postToPage() {
+              const pageId = document.getElementById('fb-post-page-id').value;
+              const message = document.getElementById('fb-post-message').value;
+              await fetch('/facebook/page-post/' + pageId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message })
+              });
+              location.href = '/result';
+            }
+          </script>
+        <% } %>
+      </div>
+
+      <div>
+        <h3>Instagram (via Meta)</h3>
+        <p>Status: <strong><%= ig ? 'Connected' : 'Not connected' %></strong></p>
+        <a class="btn" href="/auth/instagram">Connect Instagram</a>
+      </div>
+
+      <div>
+        <h3>TikTok</h3>
+        <p>Status: <strong><%= tt ? 'Connected' : 'Not connected' %></strong></p>
+        <a class="btn" href="/auth/tiktok">Connect TikTok</a>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p><a class="btn secondary" href="/result">Open Last API Result</a></p>
+  </section>
+</body>
+</html>
