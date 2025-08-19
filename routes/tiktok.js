@@ -16,7 +16,7 @@ const TT_PROFILE = 'https://open.tiktokapis.com/v2/user/info/';
 const TT_SCOPES = [
   'user.info.basic',   // Get user profile info
   'video.upload',      // Upload videos
-  'video.list'         // List uploaded videos
+  'video.publish'         // Publish videos
 ].join(',');
 
 // -------------------------
@@ -59,7 +59,7 @@ router.get('/auth/tiktok', (req, res) => {
 // -------------------------
 // Step 2: OAuth callback
 // -------------------------
-router.get('/callback/tiktok', async (req, res) => {
+router.get('/auth/tiktok/callback', async (req, res) => {
   try {
     const { code, state } = req.query;
 
@@ -96,7 +96,7 @@ router.get('/callback/tiktok', async (req, res) => {
         qs.stringify({
           client_key: process.env.TT_CLIENT_KEY,
           client_secret: process.env.TT_CLIENT_SECRET,
-          code,
+          code: code,
           grant_type: 'authorization_code',
           redirect_uri: process.env.TT_REDIRECT_URI,
           code_verifier
@@ -116,8 +116,9 @@ router.get('/callback/tiktok', async (req, res) => {
           'Failed to exchange code for token.'
       };
       return res.redirect('/result');
-    }
-
+      }
+      
+    req.tokens = req.tokens || {};
     req.tokens.tt = {
       access_token: tokenResp.data.access_token,
       refresh_token: tokenResp.data.refresh_token,

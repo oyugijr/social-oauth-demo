@@ -84,3 +84,7 @@ footer {
     color: #666;
     border-top: 1px solid #eee;
 }
+footer a {
+    color: #1877f2;
+    text-decoration: none;
+}
