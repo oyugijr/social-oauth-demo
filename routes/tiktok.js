@@ -1,6 +1,4 @@
 // routes/tiktok.js
-// TikTok OAuth + basic user.info fetch (scopes: user.info.basic).
-// Upload/publish can be added later (video.upload, video.publish).
 
 const express = require('express');
 const crypto = require('crypto');
@@ -9,19 +7,30 @@ const qs = require('qs');
 
 const router = express.Router();
 
+// TikTok OAuth constants
 const TT_AUTH = 'https://www.tiktok.com/v2/auth/authorize/';
 const TT_TOKEN = 'https://open.tiktokapis.com/v2/oauth/token/';
-const TT_API = 'https://open.tiktokapis.com/v2';
+const TT_PROFILE = 'https://open.tiktokapis.com/v2/user/info/';
 
-// request only what you can demo first; add video scopes later
-const TT_SCOPES = ['user.info.basic'].join(' ');
+// Request minimal user data (add more scopes if needed)
+const TT_SCOPES = [
+  'user.info.basic',   // Get user profile info
+  'video.upload',      // Upload videos
+  'video.list'         // List uploaded videos
+].join(',');
 
-// Step 1: send to TikTok OAuth
+// -------------------------
+// Step 1: TikTok OAuth login
+// -------------------------
 router.get('/auth/tiktok', (req, res) => {
+  // Reset session state
+  req.session.ttState = undefined;
+  req.session.ttCodeVerifier = undefined;
+
   const state = crypto.randomBytes(16).toString('hex');
   req.session.ttState = state;
 
-  // PKCE: generate code_verifier and code_challenge
+  // PKCE: generate verifier + challenge
   const code_verifier = crypto.randomBytes(32).toString('base64url');
   req.session.ttCodeVerifier = code_verifier;
   const code_challenge = crypto
@@ -47,10 +56,13 @@ router.get('/auth/tiktok', (req, res) => {
   res.redirect(url);
 });
 
-// Step 2: callback → exchange code for tokens → fetch basic profile
+// -------------------------
+// Step 2: OAuth callback
+// -------------------------
 router.get('/callback/tiktok', async (req, res) => {
   try {
     const { code, state } = req.query;
+
     if (!code) {
       req.session.lastResult = {
         title: 'TikTok OAuth Error',
@@ -58,6 +70,7 @@ router.get('/callback/tiktok', async (req, res) => {
       };
       return res.redirect('/result');
     }
+
     if (!state || state !== req.session.ttState) {
       req.session.lastResult = {
         title: 'TikTok OAuth Error',
@@ -75,6 +88,7 @@ router.get('/callback/tiktok', async (req, res) => {
       return res.redirect('/result');
     }
 
+    // Exchange code for token
     let tokenResp;
     try {
       tokenResp = await axios.post(
@@ -88,11 +102,18 @@ router.get('/callback/tiktok', async (req, res) => {
           code_verifier
         }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
+        );
+        const logId = tokenResp.headers['x-tt-logid'];
+        console.log('TikTok token response:', tokenResp.data);
+        console.log('TikTok log ID (success):', logId);
     } catch (tokenErr) {
       req.session.lastResult = {
         title: 'TikTok OAuth Error',
-        error: tokenErr.response?.data?.error?.message || tokenErr.message || 'Failed to exchange code for token.'
+        error:
+          tokenErr.response?.data?.error_description ||
+          tokenErr.response?.data?.message ||
+          tokenErr.message ||
+          'Failed to exchange code for token.'
       };
       return res.redirect('/result');
     }
@@ -103,33 +124,52 @@ router.get('/callback/tiktok', async (req, res) => {
       obtained_at: new Date().toISOString()
     };
 
-    let me;
-    try {
-      me = await axios.get(`${TT_API}/user/info/`, {
-        headers: { Authorization: `Bearer ${req.tokens.tt.access_token}` },
-        params: { fields: 'open_id,union_id,avatar_url,display_name' }
-      });
-    } catch (meErr) {
-      req.session.lastResult = {
-        title: 'TikTok OAuth Error',
-        error: meErr.response?.data?.error?.message || meErr.message || 'Failed to fetch TikTok user info.'
-      };
-      return res.redirect('/result');
-    }
-
     req.session.lastResult = {
-      title: 'TikTok: User Info',
-      payload: me.data,
-      token: req.tokens.tt.access_token
+      title: 'TikTok: Access Token',
+      payload: {
+        access_token: tokenResp.data.access_token,
+        refresh_token: tokenResp.data.refresh_token,
+        expires_in: tokenResp.data.expires_in
+      }
     };
     res.redirect('/result');
   } catch (err) {
     console.error('TikTok callback error:', err.response?.data || err.message);
     req.session.lastResult = {
       title: 'TikTok OAuth Error',
-      error: err.response?.data?.error?.message || err.message || 'TikTok OAuth failed.'
+      error:
+        err.response?.data?.error_description ||
+        err.response?.data?.message ||
+        err.message ||
+        'TikTok OAuth failed.'
     };
     res.redirect('/result');
+  }
+});
+
+// -------------------------
+// Step 3: Fetch user profile
+// -------------------------
+router.get('/tiktok/profile', async (req, res) => {
+  try {
+    const accessToken = req.tokens.tt?.access_token;
+    if (!accessToken) {
+      return res.status(400).send('Login with TikTok first.');
+    }
+
+    const profileResp = await axios.get(TT_PROFILE, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      params: { fields: 'open_id,union_id,avatar_url,display_name' }
+    });
+
+    req.session.lastResult = {
+      title: 'TikTok: User Profile',
+      payload: profileResp.data
+    };
+    res.redirect('/result');
+  } catch (err) {
+    console.error('TikTok profile error:', err.response?.data || err.message);
+    res.status(500).send('Failed to fetch TikTok profile.');
   }
 });
 

@@ -1,5 +1,4 @@
 // routes/facebook.js
-// Facebook OAuth + list pages + post a test message to a Page.
 
 const express = require('express');
 const crypto = require('crypto');
@@ -16,11 +15,36 @@ const FB_GRAPH = 'https://graph.facebook.com';
 const FB_SCOPES = [
   'pages_show_list',        // to list pages
   'pages_manage_posts',     // to publish to pages
-    'pages_read_engagement',   // to read engagement
+  'pages_read_engagement',  // to read engagement
   'publish_video'
 ].join(',');
 
-// Step 1: send user to Facebook OAuth
+// -------------------------
+// Token refresh (Facebook doesn’t support real refresh tokens)
+// -------------------------
+router.get('/facebook/refresh', (req, res) => {
+  req.session.lastResult = {
+    title: 'Facebook Token Refresh',
+    error: 'Facebook user tokens do not support refresh. Please re-login if expired.'
+  };
+  res.redirect('/result');
+});
+
+// -------------------------
+// Logout & unlink Facebook
+// -------------------------
+router.get('/logout/facebook', (req, res) => {
+  req.tokens.fb = undefined;
+  req.session.lastResult = {
+    title: 'Facebook Logout',
+    payload: 'Disconnected from Facebook.'
+  };
+  res.redirect('/result');
+});
+
+// -------------------------
+// Step 1: Send user to Facebook OAuth
+// -------------------------
 router.get('/auth/facebook', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   req.session.fbState = state;
@@ -38,10 +62,13 @@ router.get('/auth/facebook', (req, res) => {
   res.redirect(url);
 });
 
-// Step 2: OAuth callback → exchange code for user access token
+// -------------------------
+// Step 2: OAuth callback → exchange code for token
+// -------------------------
 router.get('/callback/facebook', async (req, res) => {
   try {
     const { code, state } = req.query;
+
     if (!code) {
       req.session.lastResult = {
         title: 'Facebook OAuth Error',
@@ -49,6 +76,7 @@ router.get('/callback/facebook', async (req, res) => {
       };
       return res.redirect('/result');
     }
+
     if (!state || state !== req.session.fbState) {
       req.session.lastResult = {
         title: 'Facebook OAuth Error',
@@ -109,14 +137,15 @@ router.get('/callback/facebook', async (req, res) => {
   }
 });
 
-// Get Page access token for a given Page ID
+// -------------------------
+// Get Page Access Token
+// -------------------------
 router.get('/facebook/page-token/:pageId', async (req, res) => {
   try {
     const { pageId } = req.params;
     const userToken = req.tokens.fb?.user_access_token;
     if (!userToken) return res.status(400).send('Login with Facebook first');
 
-    // /me/accounts already includes tokens; this ensures fresh fetch
     const pages = await axios.get(`${FB_GRAPH}/${FB_VER}/me/accounts`, {
       params: { access_token: userToken }
     });
@@ -137,14 +166,15 @@ router.get('/facebook/page-token/:pageId', async (req, res) => {
   }
 });
 
-// Post a simple message to a Page (good for access verification)
+// -------------------------
+// Post a message to a Page
+// -------------------------
 router.post('/facebook/page-post/:pageId', async (req, res) => {
   try {
     const { pageId } = req.params;
     const message =
       req.body?.message || 'Test post from OAuth demo (for access verification).';
 
-    // Use stored page token if we have it; otherwise try to fetch it quickly
     let pageToken = req.tokens.fb?.page_access_token;
     if (!pageToken) {
       const pages = await axios.get(`${FB_GRAPH}/${FB_VER}/me/accounts`, {
@@ -159,7 +189,10 @@ router.post('/facebook/page-post/:pageId', async (req, res) => {
     const postResp = await axios.post(
       `${FB_GRAPH}/${FB_VER}/${pageId}/feed`,
       qs.stringify({ message }),
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, params: { access_token: pageToken } }
+      {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        params: { access_token: pageToken }
+      }
     );
 
     req.session.lastResult = {
